@@ -1,33 +1,49 @@
 # ArcMeshComm - How to Use
 
-Welcome to ArcMeshComm! This is a minimalistic Android application built with Kotlin and Jetpack Compose, featuring a clean user interface that supports both Light and Dark themes.
-
-## Features
-- **Minimalistic UI**: Clean and straightforward design using Material 3 guidelines.
-- **Dark/Light Theme**: Automatically adapts based on the user's system preferences.
-- **Navigation Menu**: A centralized menu screen for navigating through the app.
-- **In-App Quickstart Guide**: A user manual built directly into the app for easy reference at any time.
-
 ## Requirements
-- Android Studio Ladybug or newer (with Compose support).
-- JDK 11 or higher.
-- Minimum SDK: API 26 (Android 8.0).
-- Target SDK: API 36.
 
-## Running the Application
-1. **Open the Project**: Open Android Studio, click **File > Open**, and select the `ArcMeshComm` directory.
-2. **Sync Project with Gradle Files**: Android Studio should automatically sync. If not, click the "Sync Project with Gradle Files" icon in the top right.
-3. **Build and Run**: Connect your Android device via USB (ensure Developer Options and USB Debugging are enabled) or start an Android Virtual Device (AVD). Click the green **Run** arrow (or press Shift+F10) to build and run the app.
+- Android Studio Ladybug or newer.
+- JDK 17 or newer recommended for the current Gradle/Android plugin stack.
+- Android device or emulator running API 26+.
+- Bluetooth enabled on a physical device for BLE readiness checks.
 
-## Using the App
-- **Home Screen**: When the app starts, you are greeted with the Home Screen. From here, you can directly access the Quickstart Guide by tapping the button at the bottom.
-- **Navigation Menu**: Tap the **hamburger icon** in the top-left corner of the Top App Bar to open the Menu Screen.
-- **Menu Screen**: This screen provides navigation links to return to the Home Screen or view the User Manual.
-- **User Manual**: Provides basic instructions on how to use the app and its features.
+## Running the App
 
-## Architecture & Code
-- **Jetpack Compose Navigation**: We use `androidx.navigation:navigation-compose` to manage transitions between screens natively.
-- **MainActivity.kt**: Contains the complete Compose UI layout including the `NavHost` and the individual composable screens (`HomeScreen`, `MenuScreen`, and `UserManualScreen`).
-- **Theming**: The app leverages the auto-generated `ArcMeshCommTheme` located in `ui/theme` to handle standard Material 3 dynamic color and dark mode switching automatically.
+1. Open the `ArcMeshComm` folder in Android Studio.
+2. Let Gradle sync finish.
+3. Select an emulator or physical Android device.
+4. Run the `app` configuration, or build from PowerShell:
 
-Enjoy building upon this minimal base for your communication app!
+```powershell
+.\gradlew.bat :app:assembleDebug
+```
+
+## App Screens
+
+### Dashboard
+
+The Dashboard shows mesh status, active packet counts, queued messages, and recent network events. Use **Message** to open Chat or **Simulate RX** to generate an encrypted inbound relay packet.
+
+### Chat
+
+Select a peer chip at the top, type a message, and tap send. The app encrypts the message with AES-GCM, creates a packet with nonce/checksum/TTL metadata, stores it locally, and marks it delivered or queued depending on the selected node state.
+
+### Nodes
+
+The Nodes screen shows BLE readiness and known mesh peers. Tap **Permissions** to grant Android nearby-device permissions. Tap **Discover** to add a simulated nearby node and switch the active chat target.
+
+### Packets
+
+Packets lists encrypted packet metadata, including sender, receiver, hop count, TTL, nonce preview, cipher preview, checksum, and delivery status. **Flush Queue** simulates store-and-forward delivery when an offline route becomes available. **Clear** resets local message and packet history.
+
+### Guide
+
+The Guide screen provides the in-app quick workflow for start, discovery, messaging, relay, and inspection.
+
+## Background Service
+
+Use the Bluetooth icon in the top app bar to toggle the foreground relay-monitor service. Android may show a persistent notification while it is active.
+
+## Current Prototype Behavior
+
+ArcMeshComm is implemented as a single-device working mesh prototype. It performs real local encryption, packet creation, queueing, persistence, and UI state management. BLE hardware readiness is checked through Android APIs; physical multi-device BLE GATT transfer is the next integration layer.
