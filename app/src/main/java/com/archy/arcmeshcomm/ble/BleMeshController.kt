@@ -16,7 +16,6 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
@@ -31,6 +30,7 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -95,15 +95,21 @@ class BleMeshController(private val context: Context) {
     fun start(identity: BleLocalIdentity): Boolean {
         this.identity = identity
         if (!readiness().ready) return false
-        if (started) return true
+        if (started) {
+            listener?.onTransportEvent(
+                "BLE scan active",
+                "Still advertising and scanning as ${identity.callsign}. Keep Scan open on nearby devices too.",
+                EventSeverity.INFO
+            )
+            return true
+        }
 
         started = true
         openGattServer()
-        startAdvertising()
         startScanning()
         listener?.onTransportEvent(
             "BLE mesh online",
-            "Advertising, scanning, and accepting packet writes as ${identity.callsign}.",
+            "Scanning now. Advertising starts after the local GATT service is registered.",
             EventSeverity.SUCCESS
         )
         return true
@@ -150,8 +156,15 @@ class BleMeshController(private val context: Context) {
                 )
             )
         }
-        gattServer = bluetoothManager?.openGattServer(appContext, serverCallback)?.apply {
-            addService(service)
+        val server = bluetoothManager?.openGattServer(appContext, serverCallback)
+        if (server == null) {
+            listener?.onTransportEvent("BLE GATT server failed", "Android did not create a local GATT server for packet receiving.", EventSeverity.ERROR)
+            return
+        }
+        gattServer = server.apply {
+            if (!addService(service)) {
+                listener?.onTransportEvent("BLE GATT service failed", "Android rejected the ArcMesh GATT service registration.", EventSeverity.ERROR)
+            }
         }
     }
 
@@ -176,17 +189,30 @@ class BleMeshController(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun startScanning() {
-        val scanner = adapter?.bluetoothLeScanner ?: return
-        val filter = ScanFilter.Builder().setServiceUuid(serviceUuid).build()
+        val scanner = adapter?.bluetoothLeScanner
+        if (scanner == null) {
+            listener?.onTransportEvent("BLE scanning unavailable", "This adapter cannot scan for nearby mesh advertisements.", EventSeverity.WARNING)
+            return
+        }
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        scanner.startScan(listOf(filter), settings, scanCallback)
+        scanner.startScan(null, settings, scanCallback)
     }
 
     @SuppressLint("MissingPermission")
     private fun connect(device: BluetoothDevice, rssi: Int) {
         if (!started || connections.containsKey(device.address)) return
+        listener?.onPeerDiscovered(
+            BlePeer(
+                id = device.address.fallbackPeerId(),
+                callsign = "Nearby ${device.address.takeLast(5)}",
+                address = device.address,
+                rssi = rssi,
+                connected = false
+            )
+        )
+        listener?.onTransportEvent("BLE advertiser seen", "Found ArcMesh advertisement from ${device.address.takeLast(5)} at $rssi dBm.", EventSeverity.INFO)
         val callback = ClientCallback(device.address, rssi)
         val gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             device.connectGatt(appContext, false, callback, BluetoothDevice.TRANSPORT_LE)
@@ -258,6 +284,10 @@ class BleMeshController(private val context: Context) {
     }
 
     private val advertiseCallback = object : AdvertiseCallback() {
+        override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
+            listener?.onTransportEvent("BLE advertising active", "This phone is visible to nearby ArcMesh scanners.", EventSeverity.SUCCESS)
+        }
+
         override fun onStartFailure(errorCode: Int) {
             listener?.onTransportEvent("BLE advertising failed", "Advertiser returned error $errorCode.", EventSeverity.ERROR)
         }
@@ -265,7 +295,10 @@ class BleMeshController(private val context: Context) {
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            connect(result.device, result.rssi)
+            val serviceUuids = result.scanRecord?.serviceUuids.orEmpty()
+            if (serviceUuids.contains(serviceUuid)) {
+                connect(result.device, result.rssi)
+            }
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -274,6 +307,16 @@ class BleMeshController(private val context: Context) {
     }
 
     private val serverCallback = object : BluetoothGattServerCallback() {
+        override fun onServiceAdded(status: Int, service: BluetoothGattService) {
+            if (service.uuid != SERVICE_UUID) return
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                listener?.onTransportEvent("BLE GATT service ready", "Packet receive service is registered on this phone.", EventSeverity.SUCCESS)
+                startAdvertising()
+            } else {
+                listener?.onTransportEvent("BLE GATT service failed", "Service registration returned status $status.", EventSeverity.ERROR)
+            }
+        }
+
         override fun onCharacteristicReadRequest(
             device: BluetoothDevice,
             requestId: Int,
@@ -315,20 +358,42 @@ class BleMeshController(private val context: Context) {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                listener?.onTransportEvent("BLE GATT connected", "Discovering ArcMesh service on ${address.takeLast(5)}.", EventSeverity.INFO)
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 connections.remove(address)
                 gatt.close()
+                listener?.onTransportEvent("BLE GATT disconnected", "Peer ${address.takeLast(5)} disconnected with status $status.", EventSeverity.WARNING)
             }
         }
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            val service = gatt.getService(SERVICE_UUID) ?: return
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                listener?.onTransportEvent("BLE service discovery failed", "Peer ${address.takeLast(5)} returned status $status.", EventSeverity.ERROR)
+                return
+            }
+            val service = gatt.getService(SERVICE_UUID)
+            if (service == null) {
+                listener?.onTransportEvent("BLE service missing", "Peer ${address.takeLast(5)} did not expose the ArcMesh service.", EventSeverity.ERROR)
+                return
+            }
             val connection = connections[address] ?: return
-            connection.packetCharacteristic = service.getCharacteristic(PACKET_CHARACTERISTIC_UUID)
+            val packetCharacteristic = service.getCharacteristic(PACKET_CHARACTERISTIC_UUID)
+            if (packetCharacteristic == null) {
+                listener?.onTransportEvent("BLE packet endpoint missing", "Peer ${address.takeLast(5)} has no packet write characteristic.", EventSeverity.ERROR)
+                return
+            }
+            connection.packetCharacteristic = packetCharacteristic
             gatt.requestMtu(TARGET_MTU)
-            service.getCharacteristic(NODE_CHARACTERISTIC_UUID)?.let { gatt.readCharacteristic(it) }
+            val nodeCharacteristic = service.getCharacteristic(NODE_CHARACTERISTIC_UUID)
+            if (nodeCharacteristic == null) {
+                listener?.onTransportEvent("BLE identity missing", "Peer ${address.takeLast(5)} has no node identity characteristic.", EventSeverity.WARNING)
+                return
+            }
+            if (!gatt.readCharacteristic(nodeCharacteristic)) {
+                listener?.onTransportEvent("BLE identity read failed", "Android refused to start identity read for ${address.takeLast(5)}.", EventSeverity.ERROR)
+            }
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
@@ -387,6 +452,10 @@ class BleMeshController(private val context: Context) {
         private const val TARGET_MTU = 512
         private const val DEFAULT_MTU = 23
         private const val FRAME_BYTES = 160
+
+        private fun String.fallbackPeerId(): String {
+            return "BLE-${abs(hashCode()).toString(16).uppercase()}"
+        }
 
         fun requiredPermissions(): List<String> {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

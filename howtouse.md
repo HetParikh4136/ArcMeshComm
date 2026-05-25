@@ -22,7 +22,7 @@
 
 ### Dashboard
 
-The Dashboard shows mesh status, active packet counts, queued messages, and recent network events. Use **Message** to open Chat or **Simulate RX** to generate an encrypted inbound relay packet.
+The Dashboard shows mesh status, active packet counts, queued messages, and recent network events. Use **Message** to open Chat after a physical peer appears in Nodes.
 
 ### Chat
 
@@ -30,7 +30,9 @@ Select a peer chip at the top, type a message, and tap send. The app encrypts th
 
 ### Nodes
 
-The Nodes screen shows BLE readiness and known mesh peers. Tap **Permissions** to grant Android nearby-device permissions. Tap **Scan** on each nearby device to advertise, scan, connect over GATT, and add physical peers to the node list.
+The Nodes screen shows BLE readiness, this device's node identity, and physical mesh peers. Tap **Permissions** to grant Android nearby-device permissions. Tap **Scan** on each nearby device to advertise, scan, connect over GATT, and add physical peers to the node list. Bravo/Charlie/Delta are no longer preloaded; an empty peer list means no physical BLE peer has linked yet.
+
+If peers do not appear, watch the BLE status line on both devices. **BLE advertising active** means the phone is visible. **BLE advertiser seen** means the other phone was detected. **BLE GATT connected** means the devices started linking. **BLE peer linked** means the node identity was read and messaging should be available. Any failed/missing status there points to the layer that is blocking discovery.
 
 ### Packets
 

@@ -250,10 +250,13 @@ private fun DashboardScreen(
                             Spacer(Modifier.width(8.dp))
                             Text("Message")
                         }
-                        OutlinedButton(onClick = { engine.simulateIncoming() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = null)
+                        OutlinedButton(onClick = {
+                            engine.startPhysicalMesh()
+                            navController.navigate(ArcRoute.Nodes.route)
+                        }) {
+                            Icon(Icons.Default.Search, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Simulate RX")
+                            Text("Scan")
                         }
                     }
                 }
@@ -311,6 +314,10 @@ private fun ChatScreen(state: MeshUiState, engine: MeshEngine) {
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
+        } else {
+            Box(Modifier.padding(horizontal = 16.dp)) {
+                EmptyState("No physical peer selected. Open Nodes, grant permissions, then tap Scan on each device.")
+            }
         }
         LazyColumn(
             modifier = Modifier
@@ -344,7 +351,7 @@ private fun ChatScreen(state: MeshUiState, engine: MeshEngine) {
                     engine.sendMessage(draft)
                     draft = ""
                 },
-                enabled = draft.isNotBlank() && state.radioEnabled
+                enabled = draft.isNotBlank() && state.radioEnabled && peer != null
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }
@@ -357,6 +364,9 @@ private fun NodesScreen(state: MeshUiState, engine: MeshEngine) {
     val context = LocalContext.current
     val controller = remember { BleMeshController(context) }
     var readiness by remember { mutableStateOf(controller.readiness()) }
+    val latestBleEvent = state.events.firstOrNull {
+        it.title.contains("BLE", ignoreCase = true) || it.title.contains("Physical", ignoreCase = true)
+    }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         readiness = controller.readiness()
         if (readiness.ready) {
@@ -385,6 +395,13 @@ private fun NodesScreen(state: MeshUiState, engine: MeshEngine) {
                         bleStatusText(readiness.supported, readiness.enabled, readiness.permissionsGranted),
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    latestBleEvent?.let {
+                        Text(
+                            "${it.title}: ${it.detail}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
                             launcher.launch(BleMeshController.requiredPermissions().toTypedArray())
@@ -405,10 +422,28 @@ private fun NodesScreen(state: MeshUiState, engine: MeshEngine) {
                 }
             }
         }
-        item { SectionTitle("Known Nodes") }
-        items(state.nodes, key = { it.id }) { node ->
-            NodeRow(node = node, selected = node.id == state.selectedPeerId) {
-                engine.selectPeer(node.id)
+        item {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("This Device", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${state.localNode.callsign} | ${state.localNode.id}", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        item { SectionTitle("Physical Peers") }
+        if (state.nodes.isEmpty()) {
+            item {
+                EmptyState("No physical peers linked yet. Install this app on another phone, grant permissions on both, and tap Scan on both devices.")
+            }
+        } else {
+            items(state.nodes, key = { it.id }) { node ->
+                NodeRow(node = node, selected = node.id == state.selectedPeerId) {
+                    engine.selectPeer(node.id)
+                }
             }
         }
     }

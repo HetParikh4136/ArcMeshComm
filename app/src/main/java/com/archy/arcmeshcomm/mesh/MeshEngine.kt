@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.update
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
-import kotlin.random.Random
 
 class MeshEngine private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -34,11 +33,7 @@ class MeshEngine private constructor(context: Context) {
 
     private val localNode = loadLocalNode()
 
-    private val initialNodes = listOf(
-        MeshNode("NODE-BRAVO", "Bravo", "Field relay", NodeStatus.ONLINE, -48, 1, 84, now()),
-        MeshNode("NODE-CHARLIE", "Charlie", "Medic team", NodeStatus.RELAY, -67, 2, 71, now() - 90_000),
-        MeshNode("NODE-DELTA", "Delta", "Supply point", NodeStatus.OFFLINE, -91, 3, 58, now() - 680_000)
-    )
+    private val initialNodes = emptyList<MeshNode>()
 
     private val _state = MutableStateFlow(
         MeshUiState(
@@ -50,7 +45,7 @@ class MeshEngine private constructor(context: Context) {
                 event("Mesh core ready", "AES-GCM session key loaded. Flood routing TTL is set to 5.", EventSeverity.SUCCESS),
                 event("BLE adapter standing by", "Grant nearby-device permissions to enable live discovery.", EventSeverity.INFO)
             ),
-            selectedPeerId = "NODE-BRAVO",
+            selectedPeerId = "",
             radioEnabled = true,
             serviceRunning = false,
             activeKeyLabel = "AES-256/GCM local session"
@@ -201,28 +196,7 @@ class MeshEngine private constructor(context: Context) {
     }
 
     fun discoverNode() {
-        if (startPhysicalMesh()) return
-
-        val callsign = listOf("Echo", "Foxtrot", "Hotel", "Sierra", "Vega").random()
-        val id = "NODE-${callsign.uppercase()}"
-        val node = MeshNode(
-            id = id,
-            callsign = callsign,
-            role = listOf("Responder", "Relay scout", "Operations team").random(),
-            status = NodeStatus.ONLINE,
-            rssi = Random.nextInt(-76, -38),
-            hops = Random.nextInt(1, 4),
-            batteryPercent = Random.nextInt(42, 99),
-            lastSeenMillis = now()
-        )
-        _state.update {
-            val nodes = (listOf(node) + it.nodes.filterNot { existing -> existing.id == id }).take(8)
-            it.copy(
-                nodes = nodes,
-                selectedPeerId = node.id,
-                events = (listOf(event("Node discovered", "${node.callsign} advertising at ${node.rssi} dBm.", EventSeverity.SUCCESS)) + it.events).take(80)
-            )
-        }
+        startPhysicalMesh()
     }
 
     fun retryQueuedPackets() {
