@@ -57,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -108,6 +109,12 @@ fun ArcMeshApp() {
     val engine = remember { MeshEngine.get(context) }
     val state by engine.state.collectAsState()
     val navController = rememberNavController()
+
+    LaunchedEffect(state.radioEnabled) {
+        if (state.radioEnabled && engine.physicalMeshReady()) {
+            engine.startPhysicalMesh()
+        }
+    }
 
     Scaffold(
         topBar = { ArcTopBar(state = state, engine = engine) },
@@ -170,6 +177,7 @@ private fun ArcTopBar(state: MeshUiState, engine: MeshEngine) {
                         } else {
                             context.startService(serviceIntent)
                         }
+                        engine.startPhysicalMesh()
                         engine.setServiceRunning(true)
                     }
                 }
@@ -233,7 +241,7 @@ private fun DashboardScreen(
                         )
                     }
                     Text(
-                        "Send AES-GCM packets, track relay hops, queue offline messages, and monitor nearby nodes without a server.",
+                        "Send AES-GCM packets, track relay hops, queue offline messages, and transfer packets to nearby phones without a server.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -351,6 +359,9 @@ private fun NodesScreen(state: MeshUiState, engine: MeshEngine) {
     var readiness by remember { mutableStateOf(controller.readiness()) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         readiness = controller.readiness()
+        if (readiness.ready) {
+            engine.startPhysicalMesh()
+        }
     }
 
     LazyColumn(
@@ -388,7 +399,7 @@ private fun NodesScreen(state: MeshUiState, engine: MeshEngine) {
                         }) {
                             Icon(Icons.Default.Search, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Discover")
+                            Text("Scan")
                         }
                     }
                 }
@@ -445,9 +456,9 @@ private fun GuideScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { GuideBlock("1. Start", "Grant BLE permissions on the Nodes screen, then keep the foreground service enabled when you need background monitoring.") }
-        item { GuideBlock("2. Discover", "Use Discover to add nearby peers in this prototype. Real BLE readiness is shown separately from the simulated mesh engine.") }
-        item { GuideBlock("3. Message", "Choose a peer in Chat. Messages are encrypted with AES-GCM, wrapped in packets, assigned a TTL, and stored locally.") }
-        item { GuideBlock("4. Relay", "Offline destinations are queued. Flush Queue simulates store-and-forward delivery when a relay path returns.") }
+        item { GuideBlock("2. Discover", "Use Scan to advertise this handset, discover nearby ArcMesh devices, and open BLE GATT packet links.") }
+        item { GuideBlock("3. Message", "Choose a peer in Chat. Messages are encrypted with AES-GCM, wrapped in packets, assigned a TTL, and written over BLE when a physical link exists.") }
+        item { GuideBlock("4. Relay", "Offline destinations are queued. BLE packets addressed to another node are forwarded with a reduced TTL for store-and-forward mesh hops.") }
         item { GuideBlock("5. Inspect", "Open Packets to review nonce, checksum, hop count, TTL, and delivery state for each packet.") }
     }
 }
@@ -642,7 +653,7 @@ private fun bleStatusText(supported: Boolean, enabled: Boolean, permissions: Boo
         !supported -> "This device does not report Bluetooth LE support."
         !enabled -> "Bluetooth is available but currently disabled in system settings."
         !permissions -> "Nearby-device permissions are required before live BLE scanning or advertising."
-        else -> "Hardware, adapter state, and permissions are ready for live BLE integration."
+        else -> "Hardware, adapter state, and permissions are ready for live BLE packet transfer."
     }
 }
 

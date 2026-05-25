@@ -5,7 +5,7 @@
 - Android Studio Ladybug or newer.
 - JDK 17 or newer recommended for the current Gradle/Android plugin stack.
 - Android device or emulator running API 26+.
-- Bluetooth enabled on a physical device for BLE readiness checks.
+- Bluetooth enabled on two or more physical devices for live BLE packet transfer.
 
 ## Running the App
 
@@ -26,15 +26,15 @@ The Dashboard shows mesh status, active packet counts, queued messages, and rece
 
 ### Chat
 
-Select a peer chip at the top, type a message, and tap send. The app encrypts the message with AES-GCM, creates a packet with nonce/checksum/TTL metadata, stores it locally, and marks it delivered or queued depending on the selected node state.
+Select a peer chip at the top, type a message, and tap send. The app encrypts the message with AES-GCM, creates a packet with nonce/checksum/TTL metadata, stores it locally, and writes it over BLE when a physical peer link exists.
 
 ### Nodes
 
-The Nodes screen shows BLE readiness and known mesh peers. Tap **Permissions** to grant Android nearby-device permissions. Tap **Discover** to add a simulated nearby node and switch the active chat target.
+The Nodes screen shows BLE readiness and known mesh peers. Tap **Permissions** to grant Android nearby-device permissions. Tap **Scan** on each nearby device to advertise, scan, connect over GATT, and add physical peers to the node list.
 
 ### Packets
 
-Packets lists encrypted packet metadata, including sender, receiver, hop count, TTL, nonce preview, cipher preview, checksum, and delivery status. **Flush Queue** simulates store-and-forward delivery when an offline route becomes available. **Clear** resets local message and packet history.
+Packets lists encrypted packet metadata, including sender, receiver, hop count, TTL, nonce preview, cipher preview, checksum, and delivery status. **Flush Queue** pushes queued packets to connected BLE peers when possible. **Clear** resets local message and packet history.
 
 ### Guide
 
@@ -46,4 +46,4 @@ Use the Bluetooth icon in the top app bar to toggle the foreground relay-monitor
 
 ## Current Prototype Behavior
 
-ArcMeshComm is implemented as a single-device working mesh prototype. It performs real local encryption, packet creation, queueing, persistence, and UI state management. BLE hardware readiness is checked through Android APIs; physical multi-device BLE GATT transfer is the next integration layer.
+ArcMeshComm now supports physical multi-device BLE transfer. It performs real local encryption, packet creation, queueing, persistence, GATT identity exchange, chunked packet writes, inbound decryption, and TTL-based packet relay. Emulators can still exercise the local prototype flow, but live BLE transfer requires physical devices.
